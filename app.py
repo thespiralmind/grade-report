@@ -32,3 +32,25 @@ col3.metric("Top student", df.iloc[0]["name"])
 
 st.subheader("Ranking")
 st.dataframe(df[["rank", "name"] + SUBJECTS + ["average"]], hide_index=True)
+
+
+import plotly.express as px
+
+st.subheader("Grade distribution")
+subject = st.selectbox("Choose a subject", SUBJECTS)
+fig_hist = px.histogram(df, x=subject, nbins=10, range_x=[0, 20])
+fig_hist.update_layout(xaxis_title="Grade", yaxis_title="Number of students")
+st.plotly_chart(fig_hist, use_container_width=True)
+
+st.subheader("Class average by subject")
+avg_by_subject = df[SUBJECTS].mean().round(2).reset_index()
+avg_by_subject.columns = ["subject", "average"]
+fig_bar = px.bar(avg_by_subject, x="subject", y="average", text="average", range_y=[0, 20])
+st.plotly_chart(fig_bar, use_container_width=True)
+
+st.subheader("Students needing support (average below 12)")
+weak = df[df["average"] < 12][["name", "average"]]
+if weak.empty:
+    st.success("No students below 12.")
+else:
+    st.dataframe(weak, hide_index=True)
