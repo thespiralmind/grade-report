@@ -1,4 +1,5 @@
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 SUBJECTS = ["math", "english", "science"]
@@ -26,6 +27,13 @@ df["average"] = df[SUBJECTS].mean(axis=1).round(2)
 df["rank"] = df["average"].rank(ascending=False, method="min").astype(int)
 df = df.sort_values("rank")
 
+min_avg = st.sidebar.slider("Minimum average", 0.0, 20.0, 0.0, step=0.5)
+df = df[df["average"] >= min_avg]
+
+if df.empty:
+    st.warning("No students match this filter.")
+    st.stop()
+
 col1, col2, col3 = st.columns(3)
 col1.metric("Students", len(df))
 col2.metric("Class average", f"{df['average'].mean():.2f}")
@@ -34,11 +42,8 @@ col3.metric("Top student", df.iloc[0]["name"])
 st.subheader("Ranking")
 st.dataframe(df[["rank", "name"] + SUBJECTS + ["average"]], hide_index=True)
 
-
-import plotly.express as px
-
 st.subheader("Grade distribution")
-subject = st.selectbox("Choose a subject", SUBJECTS)
+subject = st.sidebar.selectbox("Choose a subject", SUBJECTS)
 fig_hist = px.histogram(df, x=subject, nbins=10, range_x=[0, 20])
 fig_hist.update_layout(xaxis_title="Grade", yaxis_title="Number of students")
 st.plotly_chart(fig_hist, use_container_width=True)
@@ -55,3 +60,21 @@ if weak.empty:
     st.success("No students below 12.")
 else:
     st.dataframe(weak, hide_index=True)
+
+st.subheader("Compare a student with the class")
+student = st.selectbox("Choose a student", df["name"])
+
+student_scores = df[df["name"] == student][SUBJECTS].iloc[0]
+class_avg = df[SUBJECTS].mean().round(2)
+
+compare = pd.DataFrame({
+    "subject": SUBJECTS * 2,
+    "score": list(student_scores) + list(class_avg),
+    "who": [student] * len(SUBJECTS) + ["Class average"] * len(SUBJECTS),
+})
+
+fig_compare = px.bar(
+    compare, x="subject", y="score", color="who",
+    barmode="group", range_y=[0, 20],
+)
+st.plotly_chart(fig_compare, use_container_width=True)
