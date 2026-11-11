@@ -6,7 +6,8 @@ SUBJECTS = ["math", "english", "science"]
 st.set_page_config(page_title="Grade Dashboard", page_icon="📊", layout="wide")
 st.title("📊 Student Grade Dashboard")
 
-uploaded = st.file_uploader(
+st.sidebar.header("Settings")
+uploaded = st.sidebar.file_uploader(
     "Upload a CSV file (columns: name, math, english, science)", type="csv"
 )
 
