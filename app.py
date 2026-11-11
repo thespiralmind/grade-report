@@ -4,6 +4,20 @@ import streamlit as st
 
 SUBJECTS = ["math", "english", "science"]
 
+def load_data(uploaded_file):
+    """Read the uploaded CSV, or the sample file if nothing was uploaded."""
+    if uploaded_file is None:
+        return pd.read_csv("grades.csv")
+    return pd.read_csv(uploaded_file)
+
+
+def add_ranking(data):
+    """Add 'average' and 'rank' columns and sort by rank."""
+    data = data.copy()
+    data["average"] = data[SUBJECTS].mean(axis=1).round(2)
+    data["rank"] = data["average"].rank(ascending=False, method="min").astype(int)
+    return data.sort_values("rank")
+
 st.set_page_config(page_title="Grade Dashboard", page_icon="📊", layout="wide")
 st.title("📊 Student Grade Dashboard")
 
@@ -12,20 +26,16 @@ uploaded = st.sidebar.file_uploader(
     "Upload a CSV file (columns: name, math, english, science)", type="csv"
 )
 
+df = load_data(uploaded)
 if uploaded is None:
-    df = pd.read_csv("grades.csv")
     st.info("Showing sample data. Upload your own CSV to analyze it.")
-else:
-    df = pd.read_csv(uploaded)
 
 missing = [c for c in ["name"] + SUBJECTS if c not in df.columns]
 if missing:
     st.error(f"Missing columns: {', '.join(missing)}")
     st.stop()
 
-df["average"] = df[SUBJECTS].mean(axis=1).round(2)
-df["rank"] = df["average"].rank(ascending=False, method="min").astype(int)
-df = df.sort_values("rank")
+df = add_ranking(df)
 
 min_avg = st.sidebar.slider("Minimum average", 0.0, 20.0, 0.0, step=0.5)
 df = df[df["average"] >= min_avg]
