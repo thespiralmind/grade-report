@@ -42,6 +42,14 @@ col3.metric("Top student", df.iloc[0]["name"])
 st.subheader("Ranking")
 st.dataframe(df[["rank", "name"] + SUBJECTS + ["average"]], hide_index=True)
 
+csv_data = df[["rank", "name"] + SUBJECTS + ["average"]].to_csv(index=False).encode("utf-8")
+st.download_button(
+    label="Download results as CSV",
+    data=csv_data,
+    file_name="grade_results.csv",
+    mime="text/csv",
+)
+
 st.subheader("Grade distribution")
 subject = st.sidebar.selectbox("Choose a subject", SUBJECTS)
 fig_hist = px.histogram(df, x=subject, nbins=10, range_x=[0, 20])
