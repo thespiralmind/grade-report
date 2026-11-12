@@ -177,70 +177,63 @@ with tab_overview:
     )
 
 with tab_charts:
-    left, right = st.columns(2)
-    chart_height = 340
+    st.subheader("Performance levels")
+    st.caption(
+        "How many students got A, B, C or D. "
+        "The highlighted top bar uses each student's overall average."
+    )
 
-    with left:
-        st.subheader("Overall levels")
-        st.caption("Students per level, by overall average.")
-        level_counts = df["average"].apply(get_level).value_counts()
-        level_counts = level_counts.reindex(list(FILL), fill_value=0).reset_index()
-        level_counts.columns = ["level", "students"]
+    OVERALL = "Overall"
 
-        fig_levels = px.pie(
-            level_counts, names="level", values="students", hole=0.55,
-            color="level", color_discrete_map=FILL,
-        )
-        fig_levels.update_traces(
-            sort=False, direction="clockwise",
-            textinfo="value", textposition="inside",
-            insidetextorientation="horizontal", textfont_color=TEXT,
-            marker_line_color=[EDGE[lvl] for lvl in level_counts["level"]],
-            marker_line_width=1,
-        )
-        fig_levels.update_layout(showlegend=False)
-        fig_levels.add_annotation(
-            text=f"<b>{len(df)}</b><br>students", showarrow=False,
-            font=dict(size=18, color=TEXT),
-        )
-        st.plotly_chart(
-            style_fig(fig_levels, height=chart_height), use_container_width=True
-        )
+    # Overall first, then one entry per subject
+    groups = {OVERALL: df["average"]}
+    groups.update({sub: df[sub] for sub in SUBJECTS})
 
-    with right:
-        st.subheader("Levels by subject")
-        st.caption("Students with A, B, C or D in each subject.")
-        rows = []
-        for sub in SUBJECTS:
-            counts = df[sub].apply(get_level).value_counts()
-            for label in FILL:
-                n = int(counts.get(label, 0))
-                rows.append({
-                    "subject": sub, "level": label,
-                    "students": n, "text": str(n) if n else "",
-                })
-        by_subject = pd.DataFrame(rows)
+    rows = []
+    for group_name, grades in groups.items():
+        counts = grades.apply(get_level).value_counts()
+        for label in FILL:
+            n = int(counts.get(label, 0))
+            rows.append({
+                "group": group_name, "level": label,
+                "students": n, "text": str(n) if n else "",
+            })
+    by_group = pd.DataFrame(rows)
 
-        fig_subjects = px.bar(
-            by_subject, x="students", y="subject", color="level", text="text",
-            orientation="h", barmode="stack", template="plotly_white",
-            color_discrete_map=FILL,
-            category_orders={"subject": SUBJECTS[::-1], "level": list(FILL)},
-        )
-        fig_subjects.for_each_trace(
-            lambda t: t.update(marker_line_color=EDGE[t.name], marker_line_width=1)
-        )
-        fig_subjects.update_traces(
-            textposition="inside", insidetextanchor="middle", textfont_color=TEXT
-        )
-        fig_subjects.update_layout(
-            showlegend=False, xaxis_title="Number of students", yaxis_title=None
-        )
-        fig_subjects.update_xaxes(range=[0, len(df)])
-        st.plotly_chart(
-            style_fig(fig_subjects, height=chart_height), use_container_width=True
-        )
-        
+    fig_levels = px.bar(
+        by_group, x="students", y="group", color="level", text="text",
+        orientation="h", barmode="stack", template="plotly_white",
+        color_discrete_map=FILL,
+    )
+    fig_levels.for_each_trace(
+        lambda t: t.update(marker_line_color=EDGE[t.name], marker_line_width=1)
+    )
+    fig_levels.update_traces(
+        textposition="inside", insidetextanchor="middle", textfont_color=TEXT
+    )
+    fig_levels.update_layout(
+        showlegend=False, xaxis_title="Number of students", yaxis_title=None
+    )
+    fig_levels.update_xaxes(range=[0, len(df)])
+
+    # Plotly draws the first category at the bottom, so list them bottom-to-top
+    bottom_to_top = SUBJECTS[::-1] + [OVERALL]
+    fig_levels.update_yaxes(
+        categoryorder="array",
+        categoryarray=bottom_to_top,
+        tickvals=bottom_to_top,
+        ticktext=SUBJECTS[::-1] + [f"<b>{OVERALL}</b>"],
+    )
+
+    # Gray band behind the Overall bar plus a dotted line below it
+    top = len(bottom_to_top) - 1
+    fig_levels.add_hrect(
+        y0=top - 0.5, y1=top + 0.5, fillcolor="#F3F4F6", line_width=0, layer="below"
+    )
+    fig_levels.add_hline(y=top - 0.5, line_dash="dot", line_color="#9CA3AF")
+
+    st.plotly_chart(style_fig(fig_levels, height=380), use_container_width=True)
+
 with tab_students:
     st.subheader("Students needing support")
     st.caption(
