@@ -3,46 +3,18 @@ import plotly.express as px
 import streamlit as st
 
 SUBJECTS = ["math", "english", "science"]
-PRIMARY = "#4F46E5"
+TEXT = "#1F2937"
 
+# (label, minimum grade, soft fill color, darker border color)
 LEVELS = [
-    ("A · Excellent (16+)", 16, "#10B981"),
-    ("B · Good (14-16)", 14, "#4F46E5"),
-    ("C · Fair (12-14)", 12, "#F59E0B"),
-    ("D · Needs support (<12)", 0, "#EF4444"),
+    ("A · Excellent (16+)", 16, "#D1FAE5", "#047857"),
+    ("B · Good (14-16)", 14, "#E0E7FF", "#4338CA"),
+    ("C · Fair (12-14)", 12, "#FEF3C7", "#B45309"),
+    ("D · Needs support (<12)", 0, "#FEE2E2", "#B91C1C"),
 ]
+FILL = {label: fill for label, _, fill, _ in LEVELS}
+EDGE = {label: edge for label, _, _, edge in LEVELS}
 
-SOFT_COLORS = ["#D1FAE5", "#E0E7FF", "#FEF3C7", "#FEE2E2"]
-
-
-def get_level(avg):
-    """Return the performance level name for an average grade."""
-    for label, minimum, _ in LEVELS:
-        if avg >= minimum:
-            return label
-
-def show_legend(soft=False):
-    """Show a small color guide: a colored square and the level name."""
-    colors = SOFT_COLORS if soft else [level[2] for level in LEVELS]
-    items = []
-    for (label, _, _), color in zip(LEVELS, colors):
-        square = (
-            f'<span style="display:inline-block;width:12px;height:12px;'
-            f'background:{color};border-radius:3px;border:1px solid #D1D5DB;'
-            f'margin-right:6px;"></span>'
-        )
-        items.append(f"{square}{label}")
-    st.markdown("&nbsp;&nbsp;&nbsp;&nbsp;".join(items), unsafe_allow_html=True)
-
-def grade_color(value):
-    """Return a soft background color for a grade cell."""
-    if value >= 16:
-        return "background-color: #D1FAE5"  # green
-    if value >= 14:
-        return "background-color: #E0E7FF"  # blue
-    if value >= 12:
-        return "background-color: #FEF3C7"  # yellow
-    return "background-color: #FEE2E2"      # red
 
 def load_data(uploaded_file):
     """Read the uploaded CSV, or the sample file if nothing was uploaded."""
@@ -58,23 +30,48 @@ def add_ranking(data):
     data["rank"] = data["average"].rank(ascending=False, method="min").astype(int)
     return data.sort_values("rank")
 
+
+def get_level(grade):
+    """Return the level name (A-D) for a grade."""
+    for label, minimum, _, _ in LEVELS:
+        if grade >= minimum:
+            return label
+
+
+def grade_color(value):
+    """Return the soft background color for a grade cell."""
+    for _, minimum, fill, _ in LEVELS:
+        if value >= minimum:
+            return f"background-color: {fill}"
+
+
+def show_legend():
+    """Show the color guide: a small colored square and the level name."""
+    items = []
+    for label, _, fill, edge in LEVELS:
+        square = (
+            f'<span style="display:inline-block;width:12px;height:12px;'
+            f'background:{fill};border:1px solid {edge};border-radius:3px;'
+            f'margin-right:6px;"></span>'
+        )
+        items.append(f"{square}{label}")
+    st.markdown("&nbsp;&nbsp;&nbsp;&nbsp;".join(items), unsafe_allow_html=True)
+
+
 def style_fig(fig, height=360):
     """Apply a consistent look to every chart."""
     fig.update_layout(
         height=height,
         margin=dict(l=10, r=10, t=30, b=10),
-        font=dict(size=14, color="#1F2937"),
+        font=dict(size=14, color=TEXT),
         plot_bgcolor="white",
         paper_bgcolor="rgba(0,0,0,0)",
-        legend=dict(
-            orientation="h", yanchor="bottom", y=1.02,
-            xanchor="left", x=0, title_text="",
-        ),
         bargap=0.25,
     )
     fig.update_xaxes(showgrid=False, linecolor="#D1D5DB")
     fig.update_yaxes(gridcolor="#E5E7EB", zeroline=False)
     return fig
+
 
 st.set_page_config(page_title="Grade Dashboard", page_icon="📊", layout="wide")
 st.markdown(
@@ -105,6 +102,7 @@ min_avg = st.sidebar.slider(
     "Minimum average", 0.0, 20.0, 0.0, step=0.5,
     help="Hide students whose average is below this value.",
 )
+
 # ---------- Data ----------
 df = load_data(uploaded)
 if uploaded is None:
@@ -128,16 +126,20 @@ col1.metric("Students", len(df))
 col2.metric("Class average", f"{df['average'].mean():.2f}")
 col3.metric("Top student", df.iloc[0]["name"])
 
+# ---------- Color guide (applies to every tab) ----------
+st.caption("How to read the colors (grade level):")
+show_legend()
+
 # ---------- Tabs ----------
 tab_overview, tab_charts, tab_students = st.tabs(["Overview", "Charts", "Students"])
 
 with tab_overview:
     st.subheader("Ranking")
+    st.caption("Every grade is colored by its level, so strong and weak results stand out.")
     table = df[["rank", "name"] + SUBJECTS + ["average"]]
     styled = table.style.map(grade_color, subset=SUBJECTS + ["average"])
     styled = styled.format({"average": "{:.2f}"})
     st.dataframe(styled, hide_index=True, use_container_width=True)
-    show_legend(soft=True)
 
     st.download_button(
         label="Download results as CSV",
@@ -150,42 +152,52 @@ with tab_charts:
     left, right = st.columns(2)
 
     with left:
-       
         st.subheader("Performance levels")
+        st.caption("How many students fall into each level, based on their overall average.")
         level_counts = df["average"].apply(get_level).value_counts()
-        level_counts = level_counts.reindex([l[0] for l in LEVELS], fill_value=0)
-        level_counts = level_counts.reset_index()
+        level_counts = level_counts.reindex(list(FILL), fill_value=0).reset_index()
         level_counts.columns = ["level", "students"]
 
         fig_levels = px.pie(
             level_counts, names="level", values="students", hole=0.55,
-            color="level", color_discrete_map={l[0]: l[2] for l in LEVELS},
+            color="level", color_discrete_map=FILL,
         )
-        fig_levels.update_traces(textinfo="value", sort=False)
-        fig_levels.add_annotation(
-            text=f"<b>{len(df)}</b><br>students", showarrow=False, font=dict(size=18)
+        fig_levels.update_traces(
+            textinfo="value", sort=False, textfont_color=TEXT,
+            marker_line_color=[EDGE[lvl] for lvl in level_counts["level"]],
+            marker_line_width=2,
         )
         fig_levels.update_layout(showlegend=False)
+        fig_levels.add_annotation(
+            text=f"<b>{len(df)}</b><br>students", showarrow=False,
+            font=dict(size=18, color=TEXT),
+        )
         st.plotly_chart(style_fig(fig_levels), use_container_width=True)
 
     with right:
         st.subheader("Performance by subject")
+        st.caption("For each subject: how many students got A, B, C or D.")
         rows = []
         for sub in SUBJECTS:
             counts = df[sub].apply(get_level).value_counts()
-            for label, _, _ in LEVELS:
+            for label in FILL:
                 n = int(counts.get(label, 0))
-                rows.append({"subject": sub, "level": label, "students": n,
-                             "text": str(n) if n else ""})
+                rows.append({
+                    "subject": sub, "level": label,
+                    "students": n, "text": str(n) if n else "",
+                })
         by_subject = pd.DataFrame(rows)
 
         fig_subjects = px.bar(
             by_subject, x="students", y="subject", color="level", text="text",
             orientation="h", barmode="stack", template="plotly_white",
-            color_discrete_map={l[0]: l[2] for l in LEVELS},
-            category_orders={"level": [l[0] for l in LEVELS]},
+            color_discrete_map=FILL,
+            category_orders={"level": list(FILL)},
         )
-        fig_subjects.update_traces(textposition="inside", textfont_color="white")
+        fig_subjects.for_each_trace(
+            lambda t: t.update(marker_line_color=EDGE[t.name], marker_line_width=1.5)
+        )
+        fig_subjects.update_traces(textposition="inside", textfont_color=TEXT)
         fig_subjects.update_layout(
             showlegend=False, xaxis_title="Number of students", yaxis_title=None
         )
@@ -193,13 +205,19 @@ with tab_charts:
 
 with tab_students:
     st.subheader("All students at a glance")
-    st.caption("Each row is a student, each column a subject. Red means weak, green means strong.")
+    st.caption("Each row is a student and each column is a subject. The color shows the level.")
 
     heat = df.set_index("name")[SUBJECTS]
+    # Hard color steps so the heatmap uses exactly the A-D colors (scale 0-20)
+    scale = [
+        [0.0, FILL[LEVELS[3][0]]], [0.6, FILL[LEVELS[3][0]]],
+        [0.6, FILL[LEVELS[2][0]]], [0.7, FILL[LEVELS[2][0]]],
+        [0.7, FILL[LEVELS[1][0]]], [0.8, FILL[LEVELS[1][0]]],
+        [0.8, FILL[LEVELS[0][0]]], [1.0, FILL[LEVELS[0][0]]],
+    ]
     fig_heat = px.imshow(
         heat, text_auto=True, aspect="auto",
-        color_continuous_scale=["#EF4444", "#FDE68A", "#10B981"],
-        zmin=10, zmax=20,
+        color_continuous_scale=scale, zmin=0, zmax=20,
     )
     fig_heat.update_layout(coloraxis_showscale=False, xaxis_title=None, yaxis_title=None)
     fig_heat.update_yaxes(dtick=1)
@@ -208,7 +226,8 @@ with tab_students:
         use_container_width=True,
     )
 
-    st.subheader("Students needing support (average below 12)")
+    st.subheader("Students needing support (level D)")
+    st.caption("Students whose overall average is below 12.")
     weak = df[df["average"] < 12][["name", "average"]]
     if weak.empty:
         st.success("No students below 12.")
