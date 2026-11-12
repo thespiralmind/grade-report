@@ -17,9 +17,11 @@ EDGE = {label: edge for label, _, _, edge in LEVELS}
 
 
 def load_data(uploaded_file):
-    """Read the uploaded CSV, or the sample file if nothing was uploaded."""
+    """Read the uploaded CSV or Excel file, or the sample file if nothing was uploaded."""
     if uploaded_file is None:
         return pd.read_csv("grades.csv")
+    if uploaded_file.name.lower().endswith(".xlsx"):
+        return pd.read_excel(uploaded_file)
     return pd.read_csv(uploaded_file)
 
 
@@ -99,7 +101,8 @@ with st.expander("📁 Use your own data & filters"):
 
     with upload_col:
         uploaded = st.file_uploader(
-            "Upload a CSV file (columns: name, math, english, science)", type="csv"
+            "Upload a CSV or Excel file with student names and grades",
+            type=["csv", "xlsx"],
         )
         st.download_button(
             label="Download a sample CSV",
