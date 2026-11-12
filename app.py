@@ -6,11 +6,13 @@ SUBJECTS = ["math", "english", "science"]
 PRIMARY = "#4F46E5"
 
 LEVELS = [
-    ("Excellent (16+)", 16, "#10B981"),
-    ("Good (14-16)", 14, "#4F46E5"),
-    ("Fair (12-14)", 12, "#F59E0B"),
-    ("Needs support (<12)", 0, "#EF4444"),
+    ("A · Excellent (16+)", 16, "#10B981"),
+    ("B · Good (14-16)", 14, "#4F46E5"),
+    ("C · Fair (12-14)", 12, "#F59E0B"),
+    ("D · Needs support (<12)", 0, "#EF4444"),
 ]
+
+SOFT_COLORS = ["#D1FAE5", "#E0E7FF", "#FEF3C7", "#FEE2E2"]
 
 
 def get_level(avg):
@@ -18,6 +20,29 @@ def get_level(avg):
     for label, minimum, _ in LEVELS:
         if avg >= minimum:
             return label
+
+def show_legend(soft=False):
+    """Show a small color guide: a colored square and the level name."""
+    colors = SOFT_COLORS if soft else [level[2] for level in LEVELS]
+    items = []
+    for (label, _, _), color in zip(LEVELS, colors):
+        square = (
+            f'<span style="display:inline-block;width:12px;height:12px;'
+            f'background:{color};border-radius:3px;border:1px solid #D1D5DB;'
+            f'margin-right:6px;"></span>'
+        )
+        items.append(f"{square}{label}")
+    st.markdown("&nbsp;&nbsp;&nbsp;&nbsp;".join(items), unsafe_allow_html=True)
+
+def grade_color(value):
+    """Return a soft background color for a grade cell."""
+    if value >= 16:
+        return "background-color: #D1FAE5"  # green
+    if value >= 14:
+        return "background-color: #E0E7FF"  # blue
+    if value >= 12:
+        return "background-color: #FEF3C7"  # yellow
+    return "background-color: #FEE2E2"      # red
 
 def load_data(uploaded_file):
     """Read the uploaded CSV, or the sample file if nothing was uploaded."""
@@ -109,7 +134,10 @@ tab_overview, tab_charts, tab_students = st.tabs(["Overview", "Charts", "Student
 with tab_overview:
     st.subheader("Ranking")
     table = df[["rank", "name"] + SUBJECTS + ["average"]]
-    st.dataframe(table, hide_index=True, use_container_width=True)
+    styled = table.style.map(grade_color, subset=SUBJECTS + ["average"])
+    styled = styled.format({"average": "{:.2f}"})
+    st.dataframe(styled, hide_index=True, use_container_width=True)
+    show_legend(soft=True)
 
     st.download_button(
         label="Download results as CSV",
@@ -137,8 +165,10 @@ with tab_charts:
         fig_levels.add_annotation(
             text=f"<b>{len(df)}</b><br>students", showarrow=False, font=dict(size=18)
         )
+        fig_levels.update_layout(showlegend=False)
         st.plotly_chart(style_fig(fig_levels), use_container_width=True)
-   
+        show_legend()
+
     with right:
         st.subheader("Class average by subject")
         avg_by_subject = df[SUBJECTS].mean().round(2).reset_index()
