@@ -143,6 +143,17 @@ def show_legend():
         items.append(f"{square}{label}")
     st.markdown("&nbsp;&nbsp;&nbsp;&nbsp;".join(items), unsafe_allow_html=True)
 
+def most_d_sentence(d_counts, total):
+    """Say which subject(s) have the most students at level D, including ties."""
+    most = max(d_counts.values())
+    if most == 0:
+        return "💡 No student is at level D in any subject."
+    top = [f"**{sub}**" for sub, n in d_counts.items() if n == most]
+    if len(d_counts) > 1 and len(top) == len(d_counts):
+        return f"💡 Every subject has {most} of {total} students at level D."
+    names = top[0] if len(top) == 1 else ", ".join(top[:-1]) + " and " + top[-1]
+    each = " each" if len(top) > 1 else ""
+    return f"💡 The most students at level D are in {names} ({most} of {total}{each})."
 
 def style_fig(fig, height=360):
     """Apply a consistent look to every chart."""
@@ -268,7 +279,7 @@ if len(duplicate_names) > 0:
         "⚠️ These names appear more than once: " + ", ".join(duplicate_names)
         + ". They are shown as separate students."
     )
-    
+
 df = add_ranking(df)
 df = df[df["average"] >= min_avg]
 
@@ -325,15 +336,18 @@ with tab_overview:
 with tab_charts:
     st.subheader("Performance levels")
     st.caption(
-        "How many students got A, B, C or D. "
-        "The highlighted top bar uses each student's overall average."
+        "How many students got A, B, C or D. The highlighted top bar uses each "
+        "student's overall average. Subjects are sorted by class average, lowest first."
     )
 
     OVERALL = "Overall"
+    NO_GRADE = "No grade"
+    NO_GRADE_FILL, NO_GRADE_EDGE = "#E5E7EB", "#9CA3AF"
 
-    # Overall first, then one entry per subject
+    # Overall first, then the subjects with the lowest class average
+    weakest_first = list(subject_means.sort_values().index)
     groups = {OVERALL: df["average"]}
-    groups.update({sub: df[sub] for sub in SUBJECTS})
+    groups.update({sub: df[sub] for sub in weakest_first})
 
     rows = []
     for group_name, grades in groups.items():
@@ -344,18 +358,26 @@ with tab_charts:
                 "group": group_name, "level": label,
                 "students": n, "text": str(n) if n else "",
             })
+        missing_n = int(grades.isna().sum())  # students without a usable grade
+        rows.append({
+            "group": group_name, "level": NO_GRADE,
+            "students": missing_n, "text": str(missing_n) if missing_n else "",
+        })
     by_group = pd.DataFrame(rows)
 
     fig_levels = px.bar(
         by_group, x="students", y="group", color="level", text="text",
         orientation="h", barmode="stack", template="plotly_white",
-        color_discrete_map=FILL,
+        color_discrete_map={**FILL, NO_GRADE: NO_GRADE_FILL},
     )
     fig_levels.for_each_trace(
-        lambda t: t.update(marker_line_color=EDGE[t.name], marker_line_width=1)
+        lambda t: t.update(
+            marker_line_color=EDGE.get(t.name, NO_GRADE_EDGE), marker_line_width=1
+        )
     )
     fig_levels.update_traces(
-        textposition="inside", insidetextanchor="middle", textfont_color=TEXT
+        textposition="inside", insidetextanchor="middle", textfont_color=TEXT,
+        hovertemplate="<b>%{y}</b><br>%{fullData.name}: %{x} student(s)<extra></extra>",
     )
     fig_levels.update_layout(
         showlegend=False, xaxis_title="Number of students", yaxis_title=None
@@ -363,12 +385,14 @@ with tab_charts:
     fig_levels.update_xaxes(range=[0, len(df)])
 
     # Plotly draws the first category at the bottom, so list them bottom-to-top
-    bottom_to_top = SUBJECTS[::-1] + [OVERALL]
+    bottom_to_top = weakest_first[::-1] + [OVERALL]
     fig_levels.update_yaxes(
         categoryorder="array",
         categoryarray=bottom_to_top,
         tickvals=bottom_to_top,
-        ticktext=SUBJECTS[::-1] + [f"<b>{OVERALL}</b>"],
+        ticktext=weakest_first[::-1] + [f"<b>{OVERALL}</b>"],
+        automargin=True,
+        ticklabelstandoff=8,
     )
 
     # Gray band behind the Overall bar plus a dotted line below it
@@ -378,7 +402,16 @@ with tab_charts:
     )
     fig_levels.add_hline(y=top - 0.5, line_dash="dot", line_color="#9CA3AF")
 
-    st.plotly_chart(style_fig(fig_levels, height=380), use_container_width=True)
+    st.plotly_chart(
+        style_fig(fig_levels, height=max(300, 60 * len(groups) + 60)),
+        use_container_width=True,
+    )
+
+    # One plain-language sentence under the chart
+    d_counts = {sub: int((df[sub] < PASS_MARK).sum()) for sub in SUBJECTS}
+    st.markdown(most_d_sentence(d_counts, len(df)))
+    if (by_group.loc[by_group["level"] == NO_GRADE, "students"] > 0).any():
+        st.caption("Gray = students without a usable grade (see the data check above).")
 
 with tab_students:
     st.subheader("Students needing support")
