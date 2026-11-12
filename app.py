@@ -75,6 +75,31 @@ def guess_max_score(data, subject_cols):
             return limit
     return 100
 
+def find_data_issues(raw_data, name_col, subject_cols, max_score):
+    """List every grade cell the app cannot use, with its spreadsheet row number."""
+    has_name = raw_data[name_col].notna()
+    rows = []
+    for col in subject_cols:
+        original = raw_data[col]
+        numbers = pd.to_numeric(original, errors="coerce")
+        blank = original.isna() | (original.astype(str).str.strip() == "")
+        problems = [
+            (blank, "Empty"),
+            (~blank & numbers.isna(), "Not a number"),
+            (numbers.notna() & ((numbers < 0) | (numbers > max_score)),
+             f"Outside 0-{max_score:g}"),
+        ]
+        for mask, problem in problems:
+            for idx in raw_data.index[mask & has_name]:
+                value = "" if blank[idx] else str(original[idx])
+                rows.append({
+                    "Row": idx + 2,  # +2: Excel counts from 1 and row 1 is the header
+                    "Student": str(raw_data.loc[idx, name_col]).strip(),
+                    "Subject": str(col),
+                    "Value": value,
+                    "Problem": problem,
+                })
+    return pd.DataFrame(rows, columns=["Row", "Student", "Subject", "Value", "Problem"])
 
 def add_ranking(data):
     """Add 'average' and 'rank' columns and sort by rank."""
@@ -218,7 +243,7 @@ df = df.dropna(subset=["name"])
 df["name"] = df["name"].astype(str).str.strip()
 for col in subject_cols:
     df[col] = pd.to_numeric(df[col], errors="coerce")  # text like "ABS" becomes empty
-df = df.dropna(subset=subject_cols, how="all")
+    df[col] = df[col].where((df[col] >= 0) & (df[col] <= max_score))  # impossible grades too
 SUBJECTS = subject_cols
 
 # Levels and colors depend on the maximum score
@@ -227,6 +252,23 @@ FILL = {label: fill for label, _, fill, _ in LEVELS}
 EDGE = {label: edge for label, _, _, edge in LEVELS}
 PASS_MARK = LEVELS[2][1]  # below this grade means level D
 
+# ---------- Data check ----------
+issues = find_data_issues(raw, name_col, subject_cols, max_score)
+if not issues.empty:
+    st.warning(
+        f"⚠️ Data check: {len(issues)} grade cell(s) could not be used and were "
+        "treated as missing. A student's average only uses the grades that exist."
+    )
+    with st.expander("See which cells"):
+        st.dataframe(issues, hide_index=True, use_container_width=True)
+
+duplicate_names = df.loc[df["name"].duplicated(), "name"].unique()
+if len(duplicate_names) > 0:
+    st.warning(
+        "⚠️ These names appear more than once: " + ", ".join(duplicate_names)
+        + ". They are shown as separate students."
+    )
+    
 df = add_ranking(df)
 df = df[df["average"] >= min_avg]
 
