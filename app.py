@@ -2,7 +2,6 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-SUBJECTS = ["math", "english", "science"]
 TEXT = "#1F2937"
 
 # (label, minimum grade, soft fill color, darker border color)
@@ -24,6 +23,29 @@ def load_data(uploaded_file):
         return pd.read_excel(uploaded_file)
     return pd.read_csv(uploaded_file)
 
+def guess_name_column(data):
+    """Pick the most likely column holding student names."""
+    for col in data.columns:
+        if "name" in str(col).lower():
+            return col
+    text_cols = [c for c in data.columns if not pd.api.types.is_numeric_dtype(data[c])]
+    return text_cols[0] if text_cols else data.columns[0]
+
+
+def guess_subject_columns(data, name_col):
+    """Pick columns that mostly contain numbers (skipping 'No.', 'Total', ...)."""
+    skip = {"no", "no.", "id", "#", "rank", "total", "average", "avg", "sum"}
+    subjects = []
+    for col in data.columns:
+        if col == name_col or str(col).strip().lower() in skip:
+            continue
+        values = data[col].dropna()
+        values = values[values.astype(str).str.strip() != ""]
+        if values.empty:
+            continue
+        if pd.to_numeric(values, errors="coerce").notna().mean() >= 0.5:
+            subjects.append(col)
+    return subjects
 
 def add_ranking(data):
     """Add 'average' and 'rank' columns and sort by rank."""
@@ -117,15 +139,36 @@ with st.expander("📁 Use your own data & filters"):
             "Minimum average", 0.0, 20.0, 0.0, step=0.5,
             help="Hide students whose average is below this value.",
         )
+    
+    raw = load_data(uploaded)
+    default_name = guess_name_column(raw)
+    name_col = st.selectbox(
+        "Column with student names",
+        list(raw.columns),
+        index=list(raw.columns).index(default_name),
+    )
+    other_cols = [c for c in raw.columns if c != name_col]
+    subject_cols = st.multiselect(
+        "Columns with grades (one per subject)",
+        other_cols,
+        default=[c for c in guess_subject_columns(raw, name_col) if c in other_cols],
+    )
 
 # ---------- Data ----------
-df = load_data(uploaded)
 source = "sample data" if uploaded is None else "your uploaded file"
 
-missing = [c for c in ["name"] + SUBJECTS if c not in df.columns]
-if missing:
-    st.error(f"Missing columns: {', '.join(missing)}")
+if not subject_cols:
+    st.error("Please choose at least one column that contains grades.")
     st.stop()
+
+df = raw[[name_col] + subject_cols].copy()
+df = df.rename(columns={name_col: "name"})
+df = df.dropna(subset=["name"])
+df["name"] = df["name"].astype(str).str.strip()
+for col in subject_cols:
+    df[col] = pd.to_numeric(df[col], errors="coerce")  # text like "ABS" becomes empty
+df = df.dropna(subset=subject_cols, how="all")
+SUBJECTS = subject_cols
 
 df = add_ranking(df)
 df = df[df["average"] >= min_avg]
