@@ -117,8 +117,7 @@ with st.expander("📁 Use your own data & filters"):
 
 # ---------- Data ----------
 df = load_data(uploaded)
-if uploaded is None:
-    st.info("Showing sample data. Upload your own CSV to analyze it.")
+source = "sample data" if uploaded is None else "your uploaded file"
 
 missing = [c for c in ["name"] + SUBJECTS if c not in df.columns]
 if missing:
@@ -132,18 +131,35 @@ if df.empty:
     st.warning("No students match this filter.")
     st.stop()
 
-# ---------- Summary cards ----------
-col1, col2, col3 = st.columns(3)
+# ---------- Summary ----------
+filter_note = f" · filter: average ≥ {min_avg}" if min_avg > 0 else ""
+st.caption(f"📌 Showing {source} · {len(df)} students{filter_note}")
+
+weak_count = int((df["average"] < 12).sum())
+subject_means = df[SUBJECTS].mean()
+best = subject_means.idxmax()
+hardest = subject_means.idxmin()
+
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Students", len(df))
-col2.metric("Class average", f"{df['average'].mean():.2f}")
+col2.metric("Class average", f"{df['average'].mean():.2f} / 20")
 col3.metric("Top student", df.iloc[0]["name"])
+col4.metric("Need support", weak_count, help="Students with an average below 12 (level D)")
+
+st.info(
+    f"**Key takeaways:** the strongest subject is **{best}** "
+    f"({subject_means[best]:.1f}) and the hardest is **{hardest}** "
+    f"({subject_means[hardest]:.1f}). **{weak_count}** student(s) need support."
+)
 
 # ---------- Color guide (applies to every tab) ----------
 st.caption("How to read the colors (grade level):")
 show_legend()
 
 # ---------- Tabs ----------
-tab_overview, tab_charts, tab_students = st.tabs(["Overview", "Charts", "Students"])
+tab_overview, tab_charts, tab_students = st.tabs(
+    ["📋 Ranking", "📊 Charts", "🔍 Who needs help"]
+)
 
 with tab_overview:
     st.subheader("Ranking")
