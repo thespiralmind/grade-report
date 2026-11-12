@@ -178,10 +178,11 @@ with tab_overview:
 
 with tab_charts:
     left, right = st.columns(2)
+    chart_height = 340
 
     with left:
-        st.subheader("Performance levels")
-        st.caption("How many students fall into each level, based on their overall average.")
+        st.subheader("Overall levels")
+        st.caption("Students per level, by overall average.")
         level_counts = df["average"].apply(get_level).value_counts()
         level_counts = level_counts.reindex(list(FILL), fill_value=0).reset_index()
         level_counts.columns = ["level", "students"]
@@ -191,20 +192,24 @@ with tab_charts:
             color="level", color_discrete_map=FILL,
         )
         fig_levels.update_traces(
-            textinfo="value", sort=False, textfont_color=TEXT,
+            sort=False, direction="clockwise",
+            textinfo="value", textposition="inside",
+            insidetextorientation="horizontal", textfont_color=TEXT,
             marker_line_color=[EDGE[lvl] for lvl in level_counts["level"]],
-            marker_line_width=2,
+            marker_line_width=1,
         )
         fig_levels.update_layout(showlegend=False)
         fig_levels.add_annotation(
             text=f"<b>{len(df)}</b><br>students", showarrow=False,
             font=dict(size=18, color=TEXT),
         )
-        st.plotly_chart(style_fig(fig_levels), use_container_width=True)
+        st.plotly_chart(
+            style_fig(fig_levels, height=chart_height), use_container_width=True
+        )
 
     with right:
-        st.subheader("Performance by subject")
-        st.caption("For each subject: how many students got A, B, C or D.")
+        st.subheader("Levels by subject")
+        st.caption("Students with A, B, C or D in each subject.")
         rows = []
         for sub in SUBJECTS:
             counts = df[sub].apply(get_level).value_counts()
@@ -220,47 +225,52 @@ with tab_charts:
             by_subject, x="students", y="subject", color="level", text="text",
             orientation="h", barmode="stack", template="plotly_white",
             color_discrete_map=FILL,
-            category_orders={"level": list(FILL)},
+            category_orders={"subject": SUBJECTS[::-1], "level": list(FILL)},
         )
         fig_subjects.for_each_trace(
-            lambda t: t.update(marker_line_color=EDGE[t.name], marker_line_width=1.5)
+            lambda t: t.update(marker_line_color=EDGE[t.name], marker_line_width=1)
         )
-        fig_subjects.update_traces(textposition="inside", textfont_color=TEXT)
+        fig_subjects.update_traces(
+            textposition="inside", insidetextanchor="middle", textfont_color=TEXT
+        )
         fig_subjects.update_layout(
             showlegend=False, xaxis_title="Number of students", yaxis_title=None
         )
-        st.plotly_chart(style_fig(fig_subjects), use_container_width=True)
-
-    with tab_students:
-        st.subheader("Students needing support")
-        st.caption(
-            "Students with a D (below 12) in at least one subject or overall. "
-            "The last column shows where they scored D."
+        fig_subjects.update_xaxes(range=[0, len(df)])
+        st.plotly_chart(
+            style_fig(fig_subjects, height=chart_height), use_container_width=True
         )
+        
+with tab_students:
+    st.subheader("Students needing support")
+    st.caption(
+        "Students with a D (below 12) in at least one subject or overall. "
+        "The last column shows where they scored D."
+    )
 
-        # How many D grades are there in each subject?
-        d_fill, d_edge = LEVELS[3][2], LEVELS[3][3]
-        chips = "".join(
-            f'<span style="display:inline-block;background:{d_fill};'
-            f'border:1px solid {d_edge};color:{d_edge};border-radius:999px;'
-            f'padding:4px 14px;margin:0 8px 8px 0;font-size:14px;">'
-            f'<b>{int((df[sub] < 12).sum())}</b> with D in {sub}</span>'
-            for sub in SUBJECTS
-        )
-        st.markdown(chips, unsafe_allow_html=True)
+    # How many D grades are there in each subject?
+    d_fill, d_edge = LEVELS[3][2], LEVELS[3][3]
+    chips = "".join(
+        f'<span style="display:inline-block;background:{d_fill};'
+        f'border:1px solid {d_edge};color:{d_edge};border-radius:999px;'
+        f'padding:4px 14px;margin:0 8px 8px 0;font-size:14px;">'
+        f'<b>{int((df[sub] < 12).sum())}</b> with D in {sub}</span>'
+        for sub in SUBJECTS
+    )
+    st.markdown(chips, unsafe_allow_html=True)
 
-        support = df.copy()
-        support["D in"] = support[SUBJECTS].apply(
-            lambda row: ", ".join(s for s in SUBJECTS if row[s] < 12), axis=1
-        )
-        support["d_count"] = (support[SUBJECTS] < 12).sum(axis=1)
-        support = support[(support["d_count"] > 0) | (support["average"] < 12)]
-        support = support.sort_values(["d_count", "average"], ascending=[False, True])
+    support = df.copy()
+    support["D in"] = support[SUBJECTS].apply(
+        lambda row: ", ".join(s for s in SUBJECTS if row[s] < 12), axis=1
+    )
+    support["d_count"] = (support[SUBJECTS] < 12).sum(axis=1)
+    support = support[(support["d_count"] > 0) | (support["average"] < 12)]
+    support = support.sort_values(["d_count", "average"], ascending=[False, True])
 
-        if support.empty:
-            st.success("No student has a D in any subject.")
-        else:
-            shown = support[["name"] + SUBJECTS + ["average", "D in"]]
-            styled_support = shown.style.map(grade_color, subset=SUBJECTS + ["average"])
-            styled_support = styled_support.format({"average": "{:.2f}"})
-            st.dataframe(styled_support, hide_index=True, use_container_width=True)
+    if support.empty:
+        st.success("No student has a D in any subject.")
+    else:
+        shown = support[["name"] + SUBJECTS + ["average", "D in"]]
+        styled_support = shown.style.map(grade_color, subset=SUBJECTS + ["average"])
+        styled_support = styled_support.format({"average": "{:.2f}"})
+        st.dataframe(styled_support, hide_index=True, use_container_width=True)
