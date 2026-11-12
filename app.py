@@ -167,19 +167,29 @@ with tab_charts:
         )
         fig_levels.update_layout(showlegend=False)
         st.plotly_chart(style_fig(fig_levels), use_container_width=True)
-        show_legend()
 
     with right:
-        st.subheader("Class average by subject")
-        avg_by_subject = df[SUBJECTS].mean().round(2).reset_index()
-        avg_by_subject.columns = ["subject", "average"]
-        fig_bar = px.bar(
-            avg_by_subject, x="subject", y="average", text="average", range_y=[0, 20],
-            color_discrete_sequence=[PRIMARY], template="plotly_white",
+        st.subheader("Performance by subject")
+        rows = []
+        for sub in SUBJECTS:
+            counts = df[sub].apply(get_level).value_counts()
+            for label, _, _ in LEVELS:
+                n = int(counts.get(label, 0))
+                rows.append({"subject": sub, "level": label, "students": n,
+                             "text": str(n) if n else ""})
+        by_subject = pd.DataFrame(rows)
+
+        fig_subjects = px.bar(
+            by_subject, x="students", y="subject", color="level", text="text",
+            orientation="h", barmode="stack", template="plotly_white",
+            color_discrete_map={l[0]: l[2] for l in LEVELS},
+            category_orders={"level": [l[0] for l in LEVELS]},
         )
-        fig_bar.update_traces(textposition="outside", cliponaxis=False)
-        fig_bar.update_layout(yaxis_title=None, xaxis_title=None)
-        st.plotly_chart(style_fig(fig_bar), use_container_width=True)
+        fig_subjects.update_traces(textposition="inside", textfont_color="white")
+        fig_subjects.update_layout(
+            showlegend=False, xaxis_title="Number of students", yaxis_title=None
+        )
+        st.plotly_chart(style_fig(fig_subjects), use_container_width=True)
 
 with tab_students:
     st.subheader("All students at a glance")
