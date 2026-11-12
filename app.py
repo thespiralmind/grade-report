@@ -152,29 +152,25 @@ with tab_charts:
         st.plotly_chart(style_fig(fig_bar), use_container_width=True)
 
 with tab_students:
+    st.subheader("All students at a glance")
+    st.caption("Each row is a student, each column a subject. Red means weak, green means strong.")
+
+    heat = df.set_index("name")[SUBJECTS]
+    fig_heat = px.imshow(
+        heat, text_auto=True, aspect="auto",
+        color_continuous_scale=["#EF4444", "#FDE68A", "#10B981"],
+        zmin=10, zmax=20,
+    )
+    fig_heat.update_layout(coloraxis_showscale=False, xaxis_title=None, yaxis_title=None)
+    fig_heat.update_yaxes(dtick=1)
+    st.plotly_chart(
+        style_fig(fig_heat, height=max(360, 30 * len(df))),
+        use_container_width=True,
+    )
+
     st.subheader("Students needing support (average below 12)")
     weak = df[df["average"] < 12][["name", "average"]]
     if weak.empty:
         st.success("No students below 12.")
     else:
-        st.dataframe(weak, hide_index=True)
-
-    st.subheader("Compare a student with the class")
-    student = st.selectbox("Choose a student", df["name"])
-
-    student_scores = df[df["name"] == student][SUBJECTS].iloc[0]
-    class_avg = df[SUBJECTS].mean().round(2)
-
-    compare = pd.DataFrame({
-        "subject": SUBJECTS * 2,
-        "score": list(student_scores) + list(class_avg),
-        "who": [student] * len(SUBJECTS) + ["Class average"] * len(SUBJECTS),
-    })
-
-    fig_compare = px.bar(
-        compare, x="subject", y="score", color="who",
-        barmode="group", range_y=[0, 20],
-        color_discrete_sequence=[PRIMARY, "#9CA3AF"], template="plotly_white",
-    )
-    fig_compare.update_layout(xaxis_title=None, yaxis_title="Score")
-    st.plotly_chart(style_fig(fig_compare), use_container_width=True)
+        st.dataframe(weak, hide_index=True, use_container_width=True)
