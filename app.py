@@ -231,60 +231,36 @@ with tab_charts:
         )
         st.plotly_chart(style_fig(fig_subjects), use_container_width=True)
 
-with tab_students:
-    st.subheader("All students at a glance")
-    st.caption("Each row is a student and each column is a subject. The color shows the level.")
+    with tab_students:
+        st.subheader("Students needing support")
+        st.caption(
+            "Students with a D (below 12) in at least one subject or overall. "
+            "The last column shows where they scored D."
+        )
 
-    heat = df.set_index("name")[SUBJECTS]
-    # Hard color steps so the heatmap uses exactly the A-D colors (scale 0-20)
-    scale = [
-        [0.0, FILL[LEVELS[3][0]]], [0.6, FILL[LEVELS[3][0]]],
-        [0.6, FILL[LEVELS[2][0]]], [0.7, FILL[LEVELS[2][0]]],
-        [0.7, FILL[LEVELS[1][0]]], [0.8, FILL[LEVELS[1][0]]],
-        [0.8, FILL[LEVELS[0][0]]], [1.0, FILL[LEVELS[0][0]]],
-    ]
-    fig_heat = px.imshow(
-        heat, text_auto=True, aspect="auto",
-        color_continuous_scale=scale, zmin=0, zmax=20,
-    )
+        # How many D grades are there in each subject?
+        d_fill, d_edge = LEVELS[3][2], LEVELS[3][3]
+        chips = "".join(
+            f'<span style="display:inline-block;background:{d_fill};'
+            f'border:1px solid {d_edge};color:{d_edge};border-radius:999px;'
+            f'padding:4px 14px;margin:0 8px 8px 0;font-size:14px;">'
+            f'<b>{int((df[sub] < 12).sum())}</b> with D in {sub}</span>'
+            for sub in SUBJECTS
+        )
+        st.markdown(chips, unsafe_allow_html=True)
 
-    fig_heat.update_layout(coloraxis_showscale=False, xaxis_title=None, yaxis_title=None)
-    fig_heat.update_yaxes(dtick=1)
-    fig_heat.update_traces(xgap=4, ygap=4)
-    st.plotly_chart(
-        style_fig(fig_heat, height=max(360, 30 * len(df))),
-        use_container_width=True,
-    )
+        support = df.copy()
+        support["D in"] = support[SUBJECTS].apply(
+            lambda row: ", ".join(s for s in SUBJECTS if row[s] < 12), axis=1
+        )
+        support["d_count"] = (support[SUBJECTS] < 12).sum(axis=1)
+        support = support[(support["d_count"] > 0) | (support["average"] < 12)]
+        support = support.sort_values(["d_count", "average"], ascending=[False, True])
 
-    st.subheader("Students needing support")
-    st.caption(
-        "Students with a D (below 12) in at least one subject or overall. "
-        "The last column shows where they scored D."
-    )
-
-    # How many D grades are there in each subject?
-    d_fill, d_edge = LEVELS[3][2], LEVELS[3][3]
-    chips = "".join(
-        f'<span style="display:inline-block;background:{d_fill};'
-        f'border:1px solid {d_edge};color:{d_edge};border-radius:999px;'
-        f'padding:4px 14px;margin:0 8px 8px 0;font-size:14px;">'
-        f'<b>{int((df[sub] < 12).sum())}</b> with D in {sub}</span>'
-        for sub in SUBJECTS
-    )
-    st.markdown(chips, unsafe_allow_html=True)
-
-    support = df.copy()
-    support["D in"] = support[SUBJECTS].apply(
-        lambda row: ", ".join(s for s in SUBJECTS if row[s] < 12), axis=1
-    )
-    support["d_count"] = (support[SUBJECTS] < 12).sum(axis=1)
-    support = support[(support["d_count"] > 0) | (support["average"] < 12)]
-    support = support.sort_values(["d_count", "average"], ascending=[False, True])
-
-    if support.empty:
-        st.success("No student has a D in any subject.")
-    else:
-        shown = support[["name"] + SUBJECTS + ["average", "D in"]]
-        styled_support = shown.style.map(grade_color, subset=SUBJECTS + ["average"])
-        styled_support = styled_support.format({"average": "{:.2f}"})
-        st.dataframe(styled_support, hide_index=True, use_container_width=True)
+        if support.empty:
+            st.success("No student has a D in any subject.")
+        else:
+            shown = support[["name"] + SUBJECTS + ["average", "D in"]]
+            styled_support = shown.style.map(grade_color, subset=SUBJECTS + ["average"])
+            styled_support = styled_support.format({"average": "{:.2f}"})
+            st.dataframe(styled_support, hide_index=True, use_container_width=True)
