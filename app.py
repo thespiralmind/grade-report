@@ -4,15 +4,30 @@ import streamlit as st
 
 TEXT = "#1F2937"
 
-# (label, minimum grade, soft fill color, darker border color)
-LEVELS = [
-    ("A · Excellent (16+)", 16, "#D1FAE5", "#047857"),
-    ("B · Good (14-16)", 14, "#E0E7FF", "#4338CA"),
-    ("C · Fair (12-14)", 12, "#FEF3C7", "#B45309"),
-    ("D · Needs support (<12)", 0, "#FEE2E2", "#B91C1C"),
+# (name, share of full marks needed, soft fill color, darker border color)
+LEVEL_SPECS = [
+    ("A · Excellent", 0.8, "#D1FAE5", "#047857"),
+    ("B · Good", 0.7, "#E0E7FF", "#4338CA"),
+    ("C · Fair", 0.6, "#FEF3C7", "#B45309"),
+    ("D · Needs support", 0.0, "#FEE2E2", "#B91C1C"),
 ]
-FILL = {label: fill for label, _, fill, _ in LEVELS}
-EDGE = {label: edge for label, _, _, edge in LEVELS}
+
+
+def make_levels(max_score):
+    """Turn the level specs into (label, minimum grade, fill, edge) for a given scale."""
+    levels = []
+    previous_low = None
+    for name, share, fill, edge in LEVEL_SPECS:
+        low = round(share * max_score, 2)
+        if previous_low is None:
+            label = f"{name} ({low:g}+)"
+        elif share == 0:
+            label = f"{name} (<{previous_low:g})"
+        else:
+            label = f"{name} ({low:g}-{previous_low:g})"
+        levels.append((label, low, fill, edge))
+        previous_low = low
+    return levels
 
 
 def load_data(uploaded_file):
@@ -22,6 +37,7 @@ def load_data(uploaded_file):
     if uploaded_file.name.lower().endswith(".xlsx"):
         return pd.read_excel(uploaded_file)
     return pd.read_csv(uploaded_file)
+
 
 def guess_name_column(data):
     """Pick the most likely column holding student names."""
@@ -47,6 +63,19 @@ def guess_subject_columns(data, name_col):
             subjects.append(col)
     return subjects
 
+
+def guess_max_score(data, subject_cols):
+    """Guess the full marks (10, 20 or 100) from the highest grade in the file."""
+    if not subject_cols:
+        return 20
+    values = pd.concat([pd.to_numeric(data[c], errors="coerce") for c in subject_cols])
+    top = values.max()
+    for limit in (10, 20, 100):
+        if top <= limit:
+            return limit
+    return 100
+
+
 def add_ranking(data):
     """Add 'average' and 'rank' columns and sort by rank."""
     data = data.copy()
@@ -67,6 +96,14 @@ def grade_color(value):
     for _, minimum, fill, _ in LEVELS:
         if value >= minimum:
             return f"background-color: {fill}"
+
+
+def style_table(data):
+    """Color the grade cells by level and format the numbers nicely."""
+    cols = SUBJECTS + ["average"]
+    formats = {s: "{:g}" for s in SUBJECTS}
+    formats["average"] = "{:.2f}"
+    return data.style.map(grade_color, subset=cols).format(formats, na_rep="–")
 
 
 def show_legend():
@@ -115,13 +152,13 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.title("📊 Student Grade Dashboard")
-st.caption("Upload a CSV of grades to see rankings, charts and insights.")
+st.caption("Upload a CSV or Excel file of grades to see rankings, charts and insights.")
 
-# ---------- Data & filters ----------
-with st.expander("📁 Use your own data & filters"):
-    upload_col, filter_col = st.columns(2)
+# ---------- Data & settings ----------
+with st.expander("📁 Use your own data & settings"):
+    left_col, right_col = st.columns(2)
 
-    with upload_col:
+    with left_col:
         uploaded = st.file_uploader(
             "Upload a CSV or Excel file with student names and grades",
             type=["csv", "xlsx"],
@@ -134,25 +171,39 @@ with st.expander("📁 Use your own data & filters"):
             help="Use this file as a template for your own data.",
         )
 
+    raw = load_data(uploaded)
+
+    with right_col:
+        default_name = guess_name_column(raw)
+        name_col = st.selectbox(
+            "Column with student names",
+            list(raw.columns),
+            index=list(raw.columns).index(default_name),
+        )
+        other_cols = [c for c in raw.columns if c != name_col]
+        subject_cols = st.multiselect(
+            "Columns with grades (one per subject)",
+            other_cols,
+            default=[c for c in guess_subject_columns(raw, name_col) if c in other_cols],
+        )
+
+    score_col, filter_col = st.columns(2)
+
+    with score_col:
+        max_score = st.number_input(
+            "Maximum score (full marks)",
+            min_value=1.0,
+            value=float(guess_max_score(raw, subject_cols)),
+            step=1.0,
+            help="For example 20, 10 or 100. Levels A-D are calculated from this.",
+        )
+
     with filter_col:
         min_avg = st.slider(
-            "Minimum average", 0.0, 20.0, 0.0, step=0.5,
+            "Minimum average", 0.0, float(max_score), 0.0,
+            step=0.5 if max_score <= 20 else 1.0,
             help="Hide students whose average is below this value.",
         )
-    
-    raw = load_data(uploaded)
-    default_name = guess_name_column(raw)
-    name_col = st.selectbox(
-        "Column with student names",
-        list(raw.columns),
-        index=list(raw.columns).index(default_name),
-    )
-    other_cols = [c for c in raw.columns if c != name_col]
-    subject_cols = st.multiselect(
-        "Columns with grades (one per subject)",
-        other_cols,
-        default=[c for c in guess_subject_columns(raw, name_col) if c in other_cols],
-    )
 
 # ---------- Data ----------
 source = "sample data" if uploaded is None else "your uploaded file"
@@ -170,6 +221,12 @@ for col in subject_cols:
 df = df.dropna(subset=subject_cols, how="all")
 SUBJECTS = subject_cols
 
+# Levels and colors depend on the maximum score
+LEVELS = make_levels(max_score)
+FILL = {label: fill for label, _, fill, _ in LEVELS}
+EDGE = {label: edge for label, _, _, edge in LEVELS}
+PASS_MARK = LEVELS[2][1]  # below this grade means level D
+
 df = add_ranking(df)
 df = df[df["average"] >= min_avg]
 
@@ -178,19 +235,22 @@ if df.empty:
     st.stop()
 
 # ---------- Summary ----------
-filter_note = f" · filter: average ≥ {min_avg}" if min_avg > 0 else ""
+filter_note = f" · filter: average ≥ {min_avg:g}" if min_avg > 0 else ""
 st.caption(f"📌 Showing {source} · {len(df)} students{filter_note}")
 
-weak_count = int((df["average"] < 12).sum())
+weak_count = int((df["average"] < PASS_MARK).sum())
 subject_means = df[SUBJECTS].mean()
 best = subject_means.idxmax()
 hardest = subject_means.idxmin()
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Students", len(df))
-col2.metric("Class average", f"{df['average'].mean():.2f} / 20")
+col2.metric("Class average", f"{df['average'].mean():.1f} / {max_score:g}")
 col3.metric("Top student", df.iloc[0]["name"])
-col4.metric("Need support", weak_count, help="Students with an average below 12 (level D)")
+col4.metric(
+    "Need support", weak_count,
+    help=f"Students with an average below {PASS_MARK:g} (level D)",
+)
 
 st.info(
     f"**Key takeaways:** the strongest subject is **{best}** "
@@ -211,13 +271,11 @@ with tab_overview:
     st.subheader("Ranking")
     st.caption("Every grade is colored by its level, so strong and weak results stand out.")
     table = df[["rank", "name"] + SUBJECTS + ["average"]]
-    styled = table.style.map(grade_color, subset=SUBJECTS + ["average"])
-    styled = styled.format({"average": "{:.2f}"})
-    st.dataframe(styled, hide_index=True, use_container_width=True)
+    st.dataframe(style_table(table), hide_index=True, use_container_width=True)
 
     st.download_button(
         label="Download results as CSV",
-        data=table.to_csv(index=False).encode("utf-8"),
+        data=table.to_csv(index=False, float_format="%g").encode("utf-8"),
         file_name="grade_results.csv",
         mime="text/csv",
     )
@@ -283,7 +341,7 @@ with tab_charts:
 with tab_students:
     st.subheader("Students needing support")
     st.caption(
-        "Students with a D (below 12) in at least one subject or overall. "
+        f"Students with a D (below {PASS_MARK:g}) in at least one subject or overall. "
         "The last column shows where they scored D."
     )
 
@@ -293,23 +351,21 @@ with tab_students:
         f'<span style="display:inline-block;background:{d_fill};'
         f'border:1px solid {d_edge};color:{d_edge};border-radius:999px;'
         f'padding:4px 14px;margin:0 8px 8px 0;font-size:14px;">'
-        f'<b>{int((df[sub] < 12).sum())}</b> with D in {sub}</span>'
+        f'<b>{int((df[sub] < PASS_MARK).sum())}</b> with D in {sub}</span>'
         for sub in SUBJECTS
     )
     st.markdown(chips, unsafe_allow_html=True)
 
     support = df.copy()
     support["D in"] = support[SUBJECTS].apply(
-        lambda row: ", ".join(s for s in SUBJECTS if row[s] < 12), axis=1
+        lambda row: ", ".join(s for s in SUBJECTS if row[s] < PASS_MARK), axis=1
     )
-    support["d_count"] = (support[SUBJECTS] < 12).sum(axis=1)
-    support = support[(support["d_count"] > 0) | (support["average"] < 12)]
+    support["d_count"] = (support[SUBJECTS] < PASS_MARK).sum(axis=1)
+    support = support[(support["d_count"] > 0) | (support["average"] < PASS_MARK)]
     support = support.sort_values(["d_count", "average"], ascending=[False, True])
 
     if support.empty:
         st.success("No student has a D in any subject.")
     else:
         shown = support[["name"] + SUBJECTS + ["average", "D in"]]
-        styled_support = shown.style.map(grade_color, subset=SUBJECTS + ["average"])
-        styled_support = styled_support.format({"average": "{:.2f}"})
-        st.dataframe(styled_support, hide_index=True, use_container_width=True)
+        st.dataframe(style_table(shown), hide_index=True, use_container_width=True)
