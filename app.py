@@ -93,15 +93,27 @@ st.markdown(
 st.title("📊 Student Grade Dashboard")
 st.caption("Upload a CSV of grades to see rankings, charts and insights.")
 
-# ---------- Sidebar ----------
-st.sidebar.header("Settings")
-uploaded = st.sidebar.file_uploader(
-    "Upload a CSV file (columns: name, math, english, science)", type="csv"
-)
-min_avg = st.sidebar.slider(
-    "Minimum average", 0.0, 20.0, 0.0, step=0.5,
-    help="Hide students whose average is below this value.",
-)
+# ---------- Data & filters ----------
+with st.expander("📁 Use your own data & filters"):
+    upload_col, filter_col = st.columns(2)
+
+    with upload_col:
+        uploaded = st.file_uploader(
+            "Upload a CSV file (columns: name, math, english, science)", type="csv"
+        )
+        st.download_button(
+            label="Download a sample CSV",
+            data=pd.read_csv("grades.csv").to_csv(index=False).encode("utf-8"),
+            file_name="sample_grades.csv",
+            mime="text/csv",
+            help="Use this file as a template for your own data.",
+        )
+
+    with filter_col:
+        min_avg = st.slider(
+            "Minimum average", 0.0, 20.0, 0.0, step=0.5,
+            help="Hide students whose average is below this value.",
+        )
 
 # ---------- Data ----------
 df = load_data(uploaded)
