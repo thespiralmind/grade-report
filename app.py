@@ -75,6 +75,7 @@ def guess_max_score(data, subject_cols):
             return limit
     return 100
 
+
 def find_data_issues(raw_data, name_col, subject_cols, max_score):
     """List every grade cell the app cannot use, with its spreadsheet row number."""
     has_name = raw_data[name_col].notna()
@@ -100,6 +101,7 @@ def find_data_issues(raw_data, name_col, subject_cols, max_score):
                     "Problem": problem,
                 })
     return pd.DataFrame(rows, columns=["Row", "Student", "Subject", "Value", "Problem"])
+
 
 def add_ranking(data):
     """Add 'average' and 'rank' columns and sort by rank."""
@@ -143,6 +145,43 @@ def show_legend():
         items.append(f"{square}{label}")
     st.markdown("&nbsp;&nbsp;&nbsp;&nbsp;".join(items), unsafe_allow_html=True)
 
+
+def join_names(names):
+    """Bold names joined like: A, B and C."""
+    bold = [f"**{n}**" for n in names]
+    return bold[0] if len(bold) == 1 else ", ".join(bold[:-1]) + " and " + bold[-1]
+
+
+def takeaway_text(subject_means, weak_count):
+    """Build the key-takeaways sentence, including ties between subjects."""
+    means = subject_means.round(1)  # compare what the user actually sees
+    support = f"**{weak_count}** student(s) need support."
+    if len(means) == 1:
+        return (
+            f"**Key takeaways:** the class average in {join_names(means.index)} "
+            f"is {means.max():.1f}. {support}"
+        )
+    if means.max() == means.min():
+        return (
+            f"**Key takeaways:** all subjects have the same class average "
+            f"({means.max():.1f}). {support}"
+        )
+    best = list(means[means == means.max()].index)
+    hardest = list(means[means == means.min()].index)
+    best_text = (
+        f"the strongest subject is {join_names(best)}"
+        if len(best) == 1 else f"the strongest subjects are {join_names(best)}"
+    )
+    hardest_text = (
+        f"the hardest is {join_names(hardest)}"
+        if len(hardest) == 1 else f"the hardest are {join_names(hardest)}"
+    )
+    return (
+        f"**Key takeaways:** {best_text} ({means.max():.1f}) and {hardest_text} "
+        f"({means.min():.1f}). {support}"
+    )
+
+
 def most_d_sentence(d_counts, total):
     """Say which subject(s) have the most students at level D, including ties."""
     most = max(d_counts.values())
@@ -154,6 +193,7 @@ def most_d_sentence(d_counts, total):
     names = top[0] if len(top) == 1 else ", ".join(top[:-1]) + " and " + top[-1]
     each = " each" if len(top) > 1 else ""
     return f"💡 The most students at level D are in {names} ({most} of {total}{each})."
+
 
 def style_fig(fig, height=360):
     """Apply a consistent look to every chart."""
@@ -255,6 +295,7 @@ df["name"] = df["name"].astype(str).str.strip()
 for col in subject_cols:
     df[col] = pd.to_numeric(df[col], errors="coerce")  # text like "ABS" becomes empty
     df[col] = df[col].where((df[col] >= 0) & (df[col] <= max_score))  # impossible grades too
+df = df.dropna(subset=subject_cols, how="all")
 SUBJECTS = subject_cols
 
 # Levels and colors depend on the maximum score
@@ -293,8 +334,6 @@ st.caption(f"📌 Showing {source} · {len(df)} students{filter_note}")
 
 weak_count = int((df["average"] < PASS_MARK).sum())
 subject_means = df[SUBJECTS].mean()
-best = subject_means.idxmax()
-hardest = subject_means.idxmin()
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Students", len(df))
@@ -305,11 +344,7 @@ col4.metric(
     help=f"Students with an average below {PASS_MARK:g} (level D)",
 )
 
-st.info(
-    f"**Key takeaways:** the strongest subject is **{best}** "
-    f"({subject_means[best]:.1f}) and the hardest is **{hardest}** "
-    f"({subject_means[hardest]:.1f}). **{weak_count}** student(s) need support."
-)
+st.info(takeaway_text(subject_means, weak_count))
 
 # ---------- Color guide (applies to every tab) ----------
 st.caption("How to read the colors (grade level):")
