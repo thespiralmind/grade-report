@@ -3,7 +3,21 @@ import plotly.express as px
 import streamlit as st
 
 SUBJECTS = ["math", "english", "science"]
+PRIMARY = "#4F46E5"
 
+LEVELS = [
+    ("Excellent (16+)", 16, "#10B981"),
+    ("Good (14-16)", 14, "#4F46E5"),
+    ("Fair (12-14)", 12, "#F59E0B"),
+    ("Needs support (<12)", 0, "#EF4444"),
+]
+
+
+def get_level(avg):
+    """Return the performance level name for an average grade."""
+    for label, minimum, _ in LEVELS:
+        if avg >= minimum:
+            return label
 
 def load_data(uploaded_file):
     """Read the uploaded CSV, or the sample file if nothing was uploaded."""
@@ -19,18 +33,53 @@ def add_ranking(data):
     data["rank"] = data["average"].rank(ascending=False, method="min").astype(int)
     return data.sort_values("rank")
 
+def style_fig(fig, height=360):
+    """Apply a consistent look to every chart."""
+    fig.update_layout(
+        height=height,
+        margin=dict(l=10, r=10, t=30, b=10),
+        font=dict(size=14, color="#1F2937"),
+        plot_bgcolor="white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            xanchor="left", x=0, title_text="",
+        ),
+        bargap=0.25,
+    )
+    fig.update_xaxes(showgrid=False, linecolor="#D1D5DB")
+    fig.update_yaxes(gridcolor="#E5E7EB", zeroline=False)
+    return fig
 
 st.set_page_config(page_title="Grade Dashboard", page_icon="📊", layout="wide")
+st.markdown(
+    """
+    <style>
+    [data-testid="stMetric"] {
+        background-color: #F3F4F6;
+        border-radius: 12px;
+        padding: 16px 20px;
+        border: 1px solid #E5E7EB;
+    }
+    .block-container {
+        padding-top: 2rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 st.title("📊 Student Grade Dashboard")
+st.caption("Upload a CSV of grades to see rankings, charts and insights.")
 
 # ---------- Sidebar ----------
 st.sidebar.header("Settings")
 uploaded = st.sidebar.file_uploader(
     "Upload a CSV file (columns: name, math, english, science)", type="csv"
 )
-subject = st.sidebar.selectbox("Subject for distribution chart", SUBJECTS)
-min_avg = st.sidebar.slider("Minimum average", 0.0, 20.0, 0.0, step=0.5)
-
+min_avg = st.sidebar.slider(
+    "Minimum average", 0.0, 20.0, 0.0, step=0.5,
+    help="Hide students whose average is below this value.",
+)
 # ---------- Data ----------
 df = load_data(uploaded)
 if uploaded is None:
@@ -73,19 +122,34 @@ with tab_charts:
     left, right = st.columns(2)
 
     with left:
-        st.subheader("Grade distribution")
-        fig_hist = px.histogram(df, x=subject, nbins=10, range_x=[0, 20])
-        fig_hist.update_layout(xaxis_title="Grade", yaxis_title="Number of students")
-        st.plotly_chart(fig_hist, use_container_width=True)
+       
+        st.subheader("Performance levels")
+        level_counts = df["average"].apply(get_level).value_counts()
+        level_counts = level_counts.reindex([l[0] for l in LEVELS], fill_value=0)
+        level_counts = level_counts.reset_index()
+        level_counts.columns = ["level", "students"]
 
+        fig_levels = px.pie(
+            level_counts, names="level", values="students", hole=0.55,
+            color="level", color_discrete_map={l[0]: l[2] for l in LEVELS},
+        )
+        fig_levels.update_traces(textinfo="value", sort=False)
+        fig_levels.add_annotation(
+            text=f"<b>{len(df)}</b><br>students", showarrow=False, font=dict(size=18)
+        )
+        st.plotly_chart(style_fig(fig_levels), use_container_width=True)
+   
     with right:
         st.subheader("Class average by subject")
         avg_by_subject = df[SUBJECTS].mean().round(2).reset_index()
         avg_by_subject.columns = ["subject", "average"]
         fig_bar = px.bar(
-            avg_by_subject, x="subject", y="average", text="average", range_y=[0, 20]
+            avg_by_subject, x="subject", y="average", text="average", range_y=[0, 20],
+            color_discrete_sequence=[PRIMARY], template="plotly_white",
         )
-        st.plotly_chart(fig_bar, use_container_width=True)
+        fig_bar.update_traces(textposition="outside", cliponaxis=False)
+        fig_bar.update_layout(yaxis_title=None, xaxis_title=None)
+        st.plotly_chart(style_fig(fig_bar), use_container_width=True)
 
 with tab_students:
     st.subheader("Students needing support (average below 12)")
@@ -110,5 +174,7 @@ with tab_students:
     fig_compare = px.bar(
         compare, x="subject", y="score", color="who",
         barmode="group", range_y=[0, 20],
+        color_discrete_sequence=[PRIMARY, "#9CA3AF"], template="plotly_white",
     )
-    st.plotly_chart(fig_compare, use_container_width=True)
+    fig_compare.update_layout(xaxis_title=None, yaxis_title="Score")
+    st.plotly_chart(style_fig(fig_compare), use_container_width=True)
