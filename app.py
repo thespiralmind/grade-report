@@ -144,7 +144,8 @@ def show_legend():
             f'margin-right:6px;"></span>'
         )
         items.append(f"{square}{label}")
-    st.markdown("&nbsp;&nbsp;&nbsp;&nbsp;".join(items), unsafe_allow_html=True)
+    intro = '<span style="color:#6B7280;">Grade levels:</span>&nbsp;&nbsp;'
+    st.markdown(intro + "&nbsp;&nbsp;&nbsp;&nbsp;".join(items), unsafe_allow_html=True)
 
 
 def join_names(names):
@@ -218,8 +219,11 @@ st.markdown(
     [data-testid="stMetric"] {
         background-color: #F3F4F6;
         border-radius: 12px;
-        padding: 16px 20px;
+        padding: 10px 16px;
         border: 1px solid #E5E7EB;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 1.6rem;
     }
     .block-container {
         padding-top: 2rem;
@@ -229,58 +233,44 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.title("📊 Student Grade Dashboard")
-st.caption("Upload a CSV or Excel file of grades to see rankings, charts and insights.")
+st.markdown("Upload your class grades to see who is doing well and who needs help.")
 
-# ---------- Data & settings ----------
-with st.expander("📁 Use your own data & settings"):
-    left_col, right_col = st.columns(2)
+# ---------- Upload ----------
+uploaded = st.file_uploader(
+    "Upload a CSV or Excel file with student names and grades",
+    type=["csv", "xlsx"],
+)
+st.download_button(
+    label="Not sure about the format? Download a sample file",
+    data=pd.read_csv("grades.csv").to_csv(index=False).encode("utf-8"),
+    file_name="sample_grades.csv",
+    mime="text/csv",
+    help="Use this file as a template for your own data.",
+)
 
-    with left_col:
-        uploaded = st.file_uploader(
-            "Upload a CSV or Excel file with student names and grades",
-            type=["csv", "xlsx"],
-        )
-        st.download_button(
-            label="Download a sample CSV",
-            data=pd.read_csv("grades.csv").to_csv(index=False).encode("utf-8"),
-            file_name="sample_grades.csv",
-            mime="text/csv",
-            help="Use this file as a template for your own data.",
-        )
+raw = load_data(uploaded)
+detected_slot = st.empty()  # filled in below, once we know what was detected
 
-    raw = load_data(uploaded)
-
-    with right_col:
-        default_name = guess_name_column(raw)
-        name_col = st.selectbox(
-            "Column with student names",
-            list(raw.columns),
-            index=list(raw.columns).index(default_name),
-        )
-        other_cols = [c for c in raw.columns if c != name_col]
-        subject_cols = st.multiselect(
-            "Columns with grades (one per subject)",
-            other_cols,
-            default=[c for c in guess_subject_columns(raw, name_col) if c in other_cols],
-        )
-
-    score_col, filter_col = st.columns(2)
-
-    with score_col:
-        max_score = st.number_input(
-            "Maximum score (full marks)",
-            min_value=1.0,
-            value=float(guess_max_score(raw, subject_cols)),
-            step=1.0,
-            help="For example 20, 10 or 100. Levels A-D are calculated from this.",
-        )
-
-    with filter_col:
-        min_avg = st.slider(
-            "Minimum average", 0.0, float(max_score), 0.0,
-            step=0.5 if max_score <= 20 else 1.0,
-            help="Hide students whose average is below this value.",
-        )
+with st.expander("⚙️ Not right? Adjust the columns or full marks"):
+    default_name = guess_name_column(raw)
+    name_col = st.selectbox(
+        "Column with student names",
+        list(raw.columns),
+        index=list(raw.columns).index(default_name),
+    )
+    other_cols = [c for c in raw.columns if c != name_col]
+    subject_cols = st.multiselect(
+        "Columns with grades (one per subject)",
+        other_cols,
+        default=[c for c in guess_subject_columns(raw, name_col) if c in other_cols],
+    )
+    max_score = st.number_input(
+        "Maximum score (full marks)",
+        min_value=1.0,
+        value=float(guess_max_score(raw, subject_cols)),
+        step=1.0,
+        help="For example 20, 10 or 100. Levels A-D are calculated from this.",
+    )
 
 # ---------- Data ----------
 source = "sample data" if uploaded is None else "your uploaded file"
@@ -324,15 +314,16 @@ if len(duplicate_names) > 0:
     )
 
 df = add_ranking(df)
-df = df[df["average"] >= min_avg]
 
 if df.empty:
-    st.warning("No students match this filter.")
+    st.warning("No student has a usable grade in the selected columns.")
     st.stop()
 
 # ---------- Summary ----------
-filter_note = f" · filter: average ≥ {min_avg:g}" if min_avg > 0 else ""
-st.caption(f"📌 Showing {source} · {len(df)} students{filter_note}")
+detected_slot.caption(
+    f"📌 Showing {source} · {len(df)} students · names in **{name_col}** · "
+    f"grades in **{', '.join(str(c) for c in SUBJECTS)}** · full marks **{max_score:g}**"
+)
 
 weak_count = int((df["average"] < PASS_MARK).sum())
 subject_means = df[SUBJECTS].mean()
@@ -349,7 +340,6 @@ col4.metric(
 st.info(takeaway_text(subject_means, weak_count))
 
 # ---------- Color guide (applies to every tab) ----------
-st.caption("How to read the colors (grade level):")
 show_legend()
 
 # ---------- Tabs ----------
@@ -401,7 +391,7 @@ with tab_charts:
                 size=13, color=[FILL[l] for l in levels],
                 line=dict(color=[EDGE[l] for l in levels], width=1.5),
             ),
-            hovertemplate="<b>%{text}</b><br>" + str(sub) + ": %{y:.1f}<extra></extra>",
+            hovertemplate="<b>%{text}</b><br>" + str(sub) + ": %{y:g}<extra></extra>",
         ))
         n_d = int((grades < PASS_MARK).sum())
         tick_text.append(
