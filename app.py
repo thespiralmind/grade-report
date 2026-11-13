@@ -250,27 +250,30 @@ st.download_button(
 
 raw = load_data(uploaded)
 detected_slot = st.empty()  # filled in below, once we know what was detected
+name_col = guess_name_column(raw)  # the app finds the names column by itself
+other_cols = [c for c in raw.columns if c != name_col]
 
-with st.expander("⚙️ Not right? Adjust the columns or full marks"):
-    default_name = guess_name_column(raw)
-    name_col = st.selectbox(
-        "Column with student names",
-        list(raw.columns),
-        index=list(raw.columns).index(default_name),
-    )
-    other_cols = [c for c in raw.columns if c != name_col]
+with st.expander("⚙️ Settings: subjects and full marks"):
     subject_cols = st.multiselect(
-        "Columns with grades (one per subject)",
+        "Subjects to include",
         other_cols,
         default=[c for c in guess_subject_columns(raw, name_col) if c in other_cols],
+        help="Remove anything that is not a subject, like Total or Attendance.",
     )
-    max_score = st.number_input(
-        "Maximum score (full marks)",
-        min_value=1.0,
-        value=float(guess_max_score(raw, subject_cols)),
-        step=1.0,
-        help="For example 20, 10 or 100. Levels A-D are calculated from this.",
+    guessed_max = guess_max_score(raw, subject_cols)
+    full_marks = st.radio(
+        "Full marks (the highest possible grade)",
+        [10, 20, 100, "Other"],
+        index=[10, 20, 100].index(guessed_max),
+        horizontal=True,
+        help="Levels A-D are calculated from this.",
     )
+    if full_marks == "Other":
+        max_score = st.number_input(
+            "Type the full marks", min_value=1.0, value=float(guessed_max), step=1.0
+        )
+    else:
+        max_score = float(full_marks)
 
 # ---------- Data ----------
 source = "sample data" if uploaded is None else "your uploaded file"
@@ -321,8 +324,8 @@ if df.empty:
 
 # ---------- Summary ----------
 detected_slot.caption(
-    f"📌 Showing {source} · {len(df)} students · names in **{name_col}** · "
-    f"grades in **{', '.join(str(c) for c in SUBJECTS)}** · full marks **{max_score:g}**"
+    f"📌 Showing {source} · {len(df)} students · "
+    f"subjects: **{', '.join(str(c) for c in SUBJECTS)}** · full marks **{max_score:g}**"
 )
 
 weak_count = int((df["average"] < PASS_MARK).sum())
@@ -391,8 +394,7 @@ with tab_charts:
                 size=13, color=[FILL[l] for l in levels],
                 line=dict(color=[EDGE[l] for l in levels], width=1.5),
             ),
-            hovertemplate="<b>%{text}</b><br>" + str(sub) + ": %{y:g}<extra></extra>",
-        ))
+            hovertemplate="<b>%{text}</b><br>" + str(sub) + ": %{y:~g}<extra></extra>",        ))
         n_d = int((grades < PASS_MARK).sum())
         tick_text.append(
             f"<b>{sub}</b><br>average {grades.mean():.1f}<br>"
