@@ -2,6 +2,9 @@
 
 A web dashboard for teachers: upload a spreadsheet of class grades and instantly see who is doing well and who needs help. No setup, no formulas.
 
+**[Try the live demo](https://grade-report-nyuxcngybqysj7pihhdda3.streamlit.app/)**
+
+
 ![Dashboard overview](screenshot.png)
 
 ## What it does
