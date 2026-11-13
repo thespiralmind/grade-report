@@ -1,5 +1,6 @@
+import numpy as np
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 TEXT = "#1F2937"
@@ -295,6 +296,7 @@ df["name"] = df["name"].astype(str).str.strip()
 for col in subject_cols:
     df[col] = pd.to_numeric(df[col], errors="coerce")  # text like "ABS" becomes empty
     df[col] = df[col].where((df[col] >= 0) & (df[col] <= max_score))  # impossible grades too
+    df[col] = df[col].round(1)
 df = df.dropna(subset=subject_cols, how="all")
 SUBJECTS = subject_cols
 
@@ -369,84 +371,53 @@ with tab_overview:
     )
 
 with tab_charts:
-    st.subheader("Performance levels")
+    st.subheader("Every student in every subject")
     st.caption(
-        "How many students got A, B, C or D. The highlighted top bar uses each "
-        "student's overall average. Subjects are sorted by class average, lowest first."
+        "Each dot is one student, colored by level. Hover over a dot to see the name. "
+        f"Dots in the red zone (below {PASS_MARK:g}) need support. Subjects are sorted from weakest to strongest."
     )
 
-    OVERALL = "Overall"
-    NO_GRADE = "No grade"
-    NO_GRADE_FILL, NO_GRADE_EDGE = "#E5E7EB", "#9CA3AF"
-
-    # Overall first, then the subjects with the lowest class average
     weakest_first = list(subject_means.sort_values().index)
-    groups = {OVERALL: df["average"]}
-    groups.update({sub: df[sub] for sub in weakest_first})
+    rng = np.random.default_rng(0)  # fixed seed: the dots do not jump on every rerun
+    d_fill, d_edge = LEVELS[3][2], LEVELS[3][3]
 
-    rows = []
-    for group_name, grades in groups.items():
-        counts = grades.apply(get_level).value_counts()
-        for label in FILL:
-            n = int(counts.get(label, 0))
-            rows.append({
-                "group": group_name, "level": label,
-                "students": n, "text": str(n) if n else "",
-            })
-        missing_n = int(grades.isna().sum())  # students without a usable grade
-        rows.append({
-            "group": group_name, "level": NO_GRADE,
-            "students": missing_n, "text": str(missing_n) if missing_n else "",
-        })
-    by_group = pd.DataFrame(rows)
+    fig_dots = go.Figure()
+    y_min = max(0.0, np.floor((df[SUBJECTS].min().min() - 5) / 5) * 5)
 
-    fig_levels = px.bar(
-        by_group, x="students", y="group", color="level", text="text",
-        orientation="h", barmode="stack", template="plotly_white",
-        color_discrete_map={**FILL, NO_GRADE: NO_GRADE_FILL},
-    )
-    fig_levels.for_each_trace(
-        lambda t: t.update(
-            marker_line_color=EDGE.get(t.name, NO_GRADE_EDGE), marker_line_width=1
+    # One simple red zone below the pass mark
+    fig_dots.add_hrect(y0=y_min, y1=PASS_MARK, fillcolor=d_fill, opacity=0.45,
+                       line_width=0, layer="below")
+    fig_dots.add_hline(y=PASS_MARK, line_dash="dash", line_color=d_edge, line_width=1.5)
+
+    tick_text = []
+    for i, sub in enumerate(weakest_first):
+        grades = df[sub]
+        ok = grades.notna()
+        levels = grades[ok].apply(get_level)
+        fig_dots.add_trace(go.Scatter(
+            x=i + rng.uniform(-0.3, 0.3, int(ok.sum())), y=grades[ok],
+            mode="markers", text=df.loc[ok, "name"], showlegend=False,
+            marker=dict(
+                size=13, color=[FILL[l] for l in levels],
+                line=dict(color=[EDGE[l] for l in levels], width=1.5),
+            ),
+            hovertemplate="<b>%{text}</b><br>" + str(sub) + ": %{y:.1f}<extra></extra>",
+        ))
+        n_d = int((grades < PASS_MARK).sum())
+        tick_text.append(
+            f"<b>{sub}</b><br>average {grades.mean():.1f}<br>"
+            f"<span style='color:{d_edge}'>{n_d} with D</span>"
         )
-    )
-    fig_levels.update_traces(
-        textposition="inside", insidetextanchor="middle", textfont_color=TEXT,
-        hovertemplate="<b>%{y}</b><br>%{fullData.name}: %{x} student(s)<extra></extra>",
-    )
-    fig_levels.update_layout(
-        showlegend=False, xaxis_title="Number of students", yaxis_title=None
-    )
-    fig_levels.update_xaxes(range=[0, len(df)])
 
-    # Plotly draws the first category at the bottom, so list them bottom-to-top
-    bottom_to_top = weakest_first[::-1] + [OVERALL]
-    fig_levels.update_yaxes(
-        categoryorder="array",
-        categoryarray=bottom_to_top,
-        tickvals=bottom_to_top,
-        ticktext=weakest_first[::-1] + [f"<b>{OVERALL}</b>"],
-        automargin=True,
-        ticklabelstandoff=8,
+    fig_dots.update_xaxes(
+        tickvals=list(range(len(weakest_first))), ticktext=tick_text,
+        range=[-0.6, len(weakest_first) - 0.4], showline=False, ticks="",
     )
-
-    # Gray band behind the Overall bar plus a dotted line below it
-    top = len(bottom_to_top) - 1
-    fig_levels.add_hrect(
-        y0=top - 0.5, y1=top + 0.5, fillcolor="#F3F4F6", line_width=0, layer="below"
+    fig_dots.update_yaxes(
+        title=None, range=[y_min, max_score * 1.03], showgrid=True,
+        gridcolor="#F3F4F6",
     )
-    fig_levels.add_hline(y=top - 0.5, line_dash="dot", line_color="#9CA3AF")
-
-    st.plotly_chart(
-        style_fig(fig_levels, height=max(300, 60 * len(groups) + 60)),
-        use_container_width=True,
-    )
-
-    # One plain-language sentence under the chart
-    d_counts = {sub: int((df[sub] < PASS_MARK).sum()) for sub in SUBJECTS}
-    st.markdown(most_d_sentence(d_counts, len(df)))
-    if (by_group.loc[by_group["level"] == NO_GRADE, "students"] > 0).any():
-        st.caption("Gray = students without a usable grade (see the data check above).")
+    st.plotly_chart(style_fig(fig_dots, height=440), use_container_width=True)
 
 with tab_students:
     st.subheader("Students needing support")
