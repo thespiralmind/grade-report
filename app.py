@@ -314,7 +314,7 @@ if not issues.empty:
         "treated as missing. A student's average only uses the grades that exist."
     )
     with st.expander("See which cells"):
-        st.dataframe(issues, hide_index=True, use_container_width=True)
+        st.dataframe(issues, hide_index=True, width="stretch")
 
 duplicate_names = df.loc[df["name"].duplicated(), "name"].unique()
 if len(duplicate_names) > 0:
@@ -361,7 +361,7 @@ with tab_overview:
     st.subheader("Ranking")
     st.caption("Every grade is colored by its level, so strong and weak results stand out.")
     table = df[["rank", "name"] + SUBJECTS + ["average"]]
-    st.dataframe(style_table(table), hide_index=True, use_container_width=True)
+    st.dataframe(style_table(table), hide_index=True, width="stretch")
 
     st.download_button(
         label="Download results as CSV",
@@ -417,7 +417,7 @@ with tab_charts:
         title=None, range=[y_min, max_score * 1.03], showgrid=True,
         gridcolor="#F3F4F6",
     )
-    st.plotly_chart(style_fig(fig_dots, height=440), use_container_width=True)
+    st.plotly_chart(style_fig(fig_dots, height=440), width="stretch")
 
 with tab_students:
     st.subheader("Students needing support")
@@ -449,4 +449,4 @@ with tab_students:
         st.success("No student has a D in any subject.")
     else:
         shown = support[["name"] + SUBJECTS + ["average", "D in"]]
-        st.dataframe(style_table(shown), hide_index=True, use_container_width=True)
+        st.dataframe(style_table(shown), hide_index=True, width="stretch")
